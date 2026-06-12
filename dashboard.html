@@ -8,84 +8,75 @@
 
 <body>
 
-<div class="container">
+<div class="dashboard">
 
     <header>
-        <h1>☕ ESPRESSO DASHBOARD</h1>
+        <h1>ESPRESSO DASHBOARD</h1>
         <p>Real-time extraction monitoring and AI feedback</p>
     </header>
 
-    <div class="cards">
+    <section class="cards">
 
         <div class="card green">
             <h3>🌡 Temperature</h3>
             <div class="value"><span id="temp">-</span> °C</div>
             <p>Target: 90–96 °C</p>
-            <div class="range-row"><span>80</span><div class="bar"><div id="tempBar"></div></div><span>100</span></div>
+            <div class="bar"><div id="tempBar"></div></div>
             <div class="state" id="tempState">-</div>
         </div>
 
-        <div class="card blue">
+        <div class="card copper">
             <h3>⚙ Pressure</h3>
             <div class="value"><span id="pressure">-</span> bar</div>
             <p>Target: 9–10 bar</p>
-            <div class="range-row"><span>0</span><div class="bar"><div id="pressureBar"></div></div><span>12</span></div>
+            <div class="bar"><div id="pressureBar"></div></div>
             <div class="state" id="pressureState">-</div>
         </div>
 
-        <div class="card purple">
+        <div class="card orange">
             <h3>⏱ Extraction Time</h3>
-            <div class="value" id="time">-</div>
+            <div class="value"><span id="time">-</span> s</div>
             <p>Target: 25–30 s</p>
-            <div class="range-row"><span>0</span><div class="bar"><div id="timeBar"></div></div><span>30</span></div>
+            <div class="bar"><div id="timeBar"></div></div>
             <div class="state" id="timeState">-</div>
         </div>
 
-        <div class="card orange">
-            <h3>💧 Flow Rate</h3>
-            <div class="value"><span id="flow">-</span></div>
-            <p>Relative sensor value</p>
-            <div class="range-row"><span>0</span><div class="bar"><div id="flowBar"></div></div><span>10</span></div>
-            <div class="state" id="flowState">-</div>
-        </div>
-
-    </div>
+    </section>
 
     <section class="tips">
         <h3>💡 Quick Tips</h3>
         <p id="tip">Waiting for feedback...</p>
     </section>
 
-    <main class="main-grid">
+    <section class="main-grid">
 
-        <section class="chart-box">
-            <h3>📈 Extraction Graph</h3>
+        <div class="chart-box">
+            <h3>Extraction Graph</h3>
             <canvas id="chart"></canvas>
-        </section>
+        </div>
 
-        <section class="status-box">
-            <h3>☕ Extraction Status</h3>
+        <div class="status-box">
+            <h3>Extraction Status</h3>
             <div id="statusIcon">!</div>
             <div id="statusLabel">-</div>
             <p id="statusText">-</p>
 
             <div class="confidence">
-                <div class="confidence-header">
-                    <span>CONFIDENCE</span>
-                    <strong id="confidence">-</strong>
-                </div>
-                <div class="confidence-bar">
-                    <div id="confidenceFill"></div>
-                </div>
+                <span>CONFIDENCE</span>
+                <strong id="confidence">-</strong>
             </div>
-        </section>
 
-    </main>
+            <div class="confidence-bar">
+                <div id="confidenceFill"></div>
+            </div>
+        </div>
+
+    </section>
 
     <footer>
-        <span>🛡 Real-time Monitoring</span>
-        <span>🧠 Smart Feedback</span>
-        <span>✅ Better Extraction</span>
+        <span>Real-time Monitoring</span>
+        <span>Smart Feedback</span>
+        <span>Better Extraction</span>
     </footer>
 
 </div>
