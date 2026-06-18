@@ -1,0 +1,270 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: radial-gradient(circle at top, #1a120d, #050505 75%);
+    color: #f5e6d3;
+    font-family: Arial, sans-serif;
+}
+
+.dashboard {
+    max-width: 1180px;
+    margin: auto;
+    padding: 14px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 14px;
+}
+
+header h1 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 34px;
+    letter-spacing: 1px;
+}
+
+header p {
+    margin: 4px 0 0;
+    color: #c7b8a5;
+    font-size: 14px;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+}
+
+.card,
+.tips,
+.chart-box,
+.status-box,
+footer {
+    background: rgba(8, 8, 8, 0.92);
+    border: 1px solid rgba(217, 107, 43, 0.45);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 0 18px rgba(217, 107, 43, 0.12);
+}
+
+.card h3 {
+    margin: 0;
+    font-size: 14px;
+    text-transform: uppercase;
+    color: #d96b2b;
+}
+
+.value {
+    font-size: 40px;
+    font-weight: bold;
+    margin: 12px 0;
+}
+
+.green .value {
+    color: #9be28a;
+}
+
+.copper .value,
+.orange .value {
+    color: #d96b2b;
+}
+
+.card p {
+    margin: 0 0 8px;
+    color: #f5e6d3;
+    font-size: 12px;
+}
+
+.bar {
+    width: 100%;
+    height: 7px;
+    background: #26302b;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.bar div {
+    height: 100%;
+    width: 0%;
+    background: #d96b2b;
+    border-radius: 10px;
+    transition: width 0.4s ease;
+}
+
+#tempBar {
+    background: #9be28a;
+}
+
+#pressureBar,
+#timeBar {
+    background: #d96b2b;
+}
+
+.state {
+    margin-top: 10px;
+    text-align: center;
+    border-radius: 10px;
+    padding: 7px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.optimal {
+    background: rgba(144, 199, 123, 0.18);
+    color: #90c77b;
+}
+
+.warning {
+    background: rgba(217, 107, 43, 0.25);
+    color: #ff9a57;
+}
+
+.tips {
+    margin-top: 14px;
+    border-left: 4px solid #d96b2b;
+}
+
+.tips h3 {
+    margin: 0 0 6px;
+    color: #d96b2b;
+    font-size: 18px;
+}
+
+.tips p {
+    margin: 0;
+    color: #ffffff;
+    font-weight: bold;
+}
+
+.main-grid {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: 1.45fr 1fr;
+    gap: 14px;
+}
+
+.chart-box {
+    height: 320px;
+}
+
+.chart-box h3,
+.status-box h3 {
+    margin: 0 0 10px;
+    color: #ffffff;
+    font-size: 18px;
+}
+
+#chart {
+    max-height: 260px;
+}
+
+.status-box {
+    text-align: center;
+}
+
+#statusIcon {
+    width: 78px;
+    height: 78px;
+    margin: 8px auto 14px;
+    border: 4px solid #d96b2b;
+    border-radius: 50%;
+    color: #d96b2b;
+    font-size: 48px;
+    font-weight: bold;
+    line-height: 70px;
+}
+
+#statusLabel {
+    color: #d96b2b;
+    font-size: 42px;
+    font-weight: bold;
+}
+
+#statusText {
+    color: #f5e6d3;
+    font-size: 15px;
+}
+
+.confidence {
+    margin-top: 16px;
+    border: 1px solid rgba(245, 230, 211, 0.25);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    color: #ffffff;
+}
+
+.confidence strong {
+    color: #d96b2b;
+}
+
+.confidence-bar {
+    margin-top: 8px;
+    height: 8px;
+    background: #26302b;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+#confidenceFill {
+    height: 100%;
+    width: 0%;
+    background: #d96b2b;
+}
+
+footer {
+    margin-top: 14px;
+    display: flex;
+    justify-content: space-around;
+    color: #c7b8a5;
+    font-size: 13px;
+}
+
+@media (max-width: 900px) {
+    .dashboard {
+        padding: 10px;
+    }
+
+    header h1 {
+        font-size: 26px;
+    }
+
+    .cards {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+    }
+
+    .card {
+        padding: 11px;
+    }
+
+    .value {
+        font-size: 30px;
+    }
+
+    .main-grid {
+        grid-template-columns: 1.35fr 1fr;
+        gap: 10px;
+    }
+
+    .chart-box {
+        height: 280px;
+    }
+
+    #chart {
+        max-height: 220px;
+    }
+
+    #statusLabel {
+        font-size: 32px;
+    }
+
+    footer {
+        font-size: 11px;
+    }
+}

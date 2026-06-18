@@ -1,0 +1,1 @@
+{"process_id": 33, "temperature": {"current": 88.1}, "pressure": {"current": 2.51}, "extractionTime": {"current": 36.5, "unit": "s"}, "prediction": {"quality_score": 90.0, "quality_label": "Good extraction", "model_confidence": 49.33}}
