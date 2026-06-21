@@ -10,11 +10,19 @@
 <body>
 <div class="dashboard">
 
-   <header>
-    <h1>BaristAI</h1>
-    <h2>ESPRESSO DASHBOARD</h2>
-    <p>Real-time extraction monitoring and AI feedback</p>
-</header>
+    <header>
+        <h1>BaristAI</h1>
+        <h2>ESPRESSO DASHBOARD</h2>
+        <p>Process-aware extraction monitoring and rule-based feedback</p>
+
+        <div class="process-controls">
+            <select id="processSelect"></select>
+            <button id="simulateBtn">Simulate Live</button>
+            <button id="realLiveBtn">Real Live</button>
+            <button id="resetBtn">Reset</button>
+            <span id="processType">Process Type: -</span>
+        </div>
+    </header>
 
     <section class="cards">
         <div class="card green">
@@ -28,7 +36,7 @@
         <div class="card copper">
             <h3>⚙ Pressure</h3>
             <div class="value"><span id="pressure">-</span> bar</div>
-            <p>Target: 9–10 bar</p>
+            <p>Target: 8.5–10.5 bar</p>
             <div class="bar"><div id="pressureBar"></div></div>
             <div class="state" id="pressureState">Waiting...</div>
         </div>
@@ -57,7 +65,7 @@
             <h3>Extraction Status</h3>
             <div id="statusIcon">!</div>
             <div id="statusLabel">Waiting...</div>
-            <p id="statusText">Waiting for incoming MQTT data.</p>
+            <p id="statusText">Waiting for incoming data.</p>
 
             <div class="confidence">
                 <span>CONFIDENCE</span>
@@ -71,9 +79,9 @@
     </section>
 
     <footer>
-        <span>Real-time Monitoring</span>
-        <span>Smart Feedback</span>
-        <span>Better Extraction</span>
+        <span>Process-aware Monitoring</span>
+        <span>Server-side Streaming</span>
+        <span>Rule-based Feedback</span>
     </footer>
 
 </div>

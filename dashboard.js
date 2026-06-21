@@ -1,25 +1,68 @@
 let chart;
-let lastTimestamp = null;
+let currentProcessId = null;
+let currentStream = null;
+let currentSegments = [];
 
-const HISTORY_URL = "http://127.0.0.1:5000/history";
-const LIVE_URL = "http://127.0.0.1:5000/influx/live";
+const segmentNames = {
+    1: "Brewing",
+    2: "Flushing",
+    3: "Steam",
+    4: "Heating",
+    5: "Idle"
+};
+
+const segmentColors = {
+    1: "#8fd19e",
+    2: "#9ecff0",
+    3: "#b7a3e3",
+    4: "#f2d37b",
+    5: "#cfcfcf"
+};
+
+const segmentPlugin = {
+    id: "segmentShading",
+    beforeDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        if (!chartArea || !currentSegments.length) return;
+
+        const xScale = scales.x;
+        ctx.save();
+
+        currentSegments.forEach(seg => {
+            const startX = xScale.getPixelForValue(seg.start);
+            const endX = xScale.getPixelForValue(seg.end);
+            const color = segmentColors[seg.segment_id] || seg.color || "#cccccc";
+
+            ctx.fillStyle = color + "55";
+            ctx.fillRect(
+                startX,
+                chartArea.top,
+                Math.max(endX - startX, 2),
+                chartArea.bottom - chartArea.top
+            );
+        });
+
+        ctx.restore();
+    }
+};
+
+Chart.register(segmentPlugin);
 
 function setText(id, value) {
-    const element = document.getElementById(id);
-    if (element) element.textContent = value;
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
 }
 
 function setWidth(id, value) {
-    const element = document.getElementById(id);
-    if (element) element.style.width = value + "%";
+    const el = document.getElementById(id);
+    if (el) el.style.width = Math.max(0, Math.min(100, value)) + "%";
 }
 
 function setState(id, text, type) {
-    const element = document.getElementById(id);
-    if (!element) return;
-
-    element.textContent = text;
-    element.className = "state " + type;
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = "state " + type;
 }
 
 function createChart() {
@@ -28,34 +71,37 @@ function createChart() {
     chart = new Chart(ctx, {
         type: "line",
         data: {
-            labels: [],
             datasets: [
-                {
-                    label: "Temperature (°C)",
-                    data: [],
-                    borderColor: "#d46f12",
-                    backgroundColor: "transparent",
-                    tension: 0.35,
-                    borderWidth: 3,
-                    pointRadius: 4
-                },
                 {
                     label: "Pressure (bar)",
                     data: [],
                     borderColor: "#1f5d22",
                     backgroundColor: "transparent",
-                    tension: 0.35,
                     borderWidth: 3,
-                    pointRadius: 4
+                    tension: 0.25,
+                    pointRadius: 2,
+                    yAxisID: "yPressure"
+                },
+                {
+                    label: "Temperature (°C)",
+                    data: [],
+                    borderColor: "#b23a2e",
+                    backgroundColor: "transparent",
+                    borderWidth: 3,
+                    tension: 0.25,
+                    pointRadius: 2,
+                    yAxisID: "yTemp"
                 }
             ]
         },
         options: {
+            animation: false,
             responsive: true,
             maintainAspectRatio: false,
-            animation: false,
+            parsing: false,
             plugins: {
                 legend: {
+                    position: "bottom",
                     labels: {
                         color: "#2b1a12",
                         font: {
@@ -68,126 +114,97 @@ function createChart() {
             },
             scales: {
                 x: {
+                    type: "linear",
+                    min: 0,
+                    title: {
+                        display: true,
+                        text: "Time (seconds)",
+                        color: "#3a2417",
+                        font: { weight: "bold" }
+                    },
                     ticks: {
                         color: "#3a2417",
-                        maxRotation: 35,
-                        minRotation: 35,
-                        font: {
-                            size: 11,
-                            weight: "bold",
-                            family: "Arial"
-                        }
+                        font: { size: 11, weight: "bold", family: "Arial" }
                     },
-                    grid: {
-                        color: "rgba(90, 55, 25, 0.18)"
-                    }
+                    grid: { color: "rgba(90,55,25,0.18)" }
                 },
-                y: {
-                    ticks: {
-                        color: "#3a2417",
-                        font: {
-                            size: 12,
-                            weight: "bold",
-                            family: "Arial"
-                        }
+                yPressure: {
+                    position: "left",
+                    min: 0,
+                    max: 16,
+                    title: {
+                        display: true,
+                        text: "Pressure (bar)",
+                        color: "#1f5d22",
+                        font: { weight: "bold" }
                     },
-                    grid: {
-                        color: "rgba(90, 55, 25, 0.18)"
-                    }
+                    ticks: {
+                        color: "#1f5d22",
+                        font: { weight: "bold" }
+                    },
+                    grid: { color: "rgba(90,55,25,0.18)" }
+                },
+                yTemp: {
+                    position: "right",
+                    min: 78,
+                    max: 102,
+                    title: {
+                        display: true,
+                        text: "Temp (°C)",
+                        color: "#b23a2e",
+                        font: { weight: "bold" }
+                    },
+                    ticks: {
+                        color: "#b23a2e",
+                        font: { weight: "bold" }
+                    },
+                    grid: { drawOnChartArea: false }
                 }
             }
         }
     });
 }
 
+function resetChart() {
+    chart.data.datasets[0].data = [];
+    chart.data.datasets[1].data = [];
+    chart.update("none");
+}
+
 function updateStates(temp, pressure, time) {
-    setState(
-        "tempState",
-        temp >= 90 && temp <= 96 ? "✓ OPTIMAL" : "▲ NOT OPTIMAL",
-        temp >= 90 && temp <= 96 ? "optimal" : "warning"
-    );
+    const tempOk = temp >= 90 && temp <= 96;
+    const pressureOk = pressure >= 8.5 && pressure <= 10.5;
+    const timeOk = time >= 25 && time <= 30;
 
-    setState(
-        "pressureState",
-        pressure >= 9 && pressure <= 10 ? "✓ OPTIMAL" : "▲ NOT OPTIMAL",
-        pressure >= 9 && pressure <= 10 ? "optimal" : "warning"
-    );
-
-    setState(
-        "timeState",
-        time >= 25 && time <= 30 ? "✓ OPTIMAL" : "▲ NOT OPTIMAL",
-        time >= 25 && time <= 30 ? "optimal" : "warning"
-    );
+    setState("tempState", tempOk ? "✓ OPTIMAL" : "▲ NOT OPTIMAL", tempOk ? "optimal" : "warning");
+    setState("pressureState", pressureOk ? "✓ OPTIMAL" : "▲ NOT OPTIMAL", pressureOk ? "optimal" : "warning");
+    setState("timeState", timeOk ? "✓ OPTIMAL" : "▲ NOT OPTIMAL", timeOk ? "optimal" : "warning");
 }
 
-function updateFeedback(temp, pressure, time, score) {
-    const issues = [];
-
-    if (temp < 90) {
-        issues.push("temperature is low");
-    } else if (temp > 96) {
-        issues.push("temperature is high");
-    }
-
-    if (pressure < 9) {
-        issues.push("pressure is low");
-    } else if (pressure > 10) {
-        issues.push("pressure is high");
-    }
-
-    if (time < 25) {
-        issues.push("extraction time is short");
-    } else if (time > 30) {
-        issues.push("extraction time is long");
-    }
-
-    let tip = "Extraction looks stable.";
-
-    if (issues.length === 1) {
-        tip = "Issue detected: " + issues[0] + ".";
-    } else if (issues.length > 1) {
-        tip = "Issues detected: " + issues.join(", ") + ".";
-    }
-
-    if (score < 40) {
-        tip += " Adjust grind size, pressure, and temperature.";
-    }
-
-    setText("tip", tip);
-}
-
-function updateStatus(score, temp, pressure, time) {
+function updateStatus(score, label) {
     const statusLabel = document.getElementById("statusLabel");
     const statusIcon = document.getElementById("statusIcon");
     const confidenceFill = document.getElementById("confidenceFill");
 
-    const tempOk = temp >= 90 && temp <= 96;
-    const pressureOk = pressure >= 9 && pressure <= 10;
-    const timeOk = time >= 25 && time <= 30;
+    setText("statusLabel", label || "Unknown");
 
-    if (tempOk && pressureOk && timeOk && score >= 70) {
-        setText("statusLabel", "GOOD EXTRACTION");
-        setText("statusText", "Your espresso is within the optimal range.");
+    if (score >= 75) {
         setText("statusIcon", "✓");
-
+        setText("statusText", "Extraction looks stable.");
         statusLabel.style.color = "#1f5d22";
         statusIcon.style.color = "#1f5d22";
         statusIcon.style.borderColor = "#1f5d22";
         confidenceFill.style.background = "#1f5d22";
-    } else if (score >= 40) {
-        setText("statusLabel", "WARNING EXTRACTION");
-        setText("statusText", "Some extraction values are outside the target range.");
+    } else if (score >= 45) {
         setText("statusIcon", "!");
-
+        setText("statusText", "Extraction needs some adjustment.");
         statusLabel.style.color = "#9a4a12";
         statusIcon.style.color = "#9a4a12";
         statusIcon.style.borderColor = "#9a4a12";
         confidenceFill.style.background = "#9a4a12";
     } else {
-        setText("statusLabel", "POOR EXTRACTION");
-        setText("statusText", "Adjust grind size, pressure, and temperature.");
         setText("statusIcon", "!");
-
+        setText("statusText", "Extraction is outside the target range.");
         statusLabel.style.color = "#8b1e12";
         statusIcon.style.color = "#8b1e12";
         statusIcon.style.borderColor = "#8b1e12";
@@ -196,107 +213,153 @@ function updateStatus(score, temp, pressure, time) {
 }
 
 function updateDashboard(data) {
-    const temp = Number(data.temperature.current);
-    const pressure = Number(data.pressure.current);
-    const time = Number(data.extractionTime.current);
-    const score = Number(data.prediction.quality_score);
+    const temp = Number(data.temperature?.current || 0);
+    const pressure = Number(data.pressure?.current || 0);
+    const time = Number(data.extractionTime?.current || data.elapsed_seconds || 0);
+    const score = Number(data.prediction?.quality_score || 0);
+    const label = data.prediction?.quality_label || "Unknown";
+    const feedback = data.prediction?.feedback || ["Waiting for feedback."];
 
-    setText("temp", temp);
-    setText("pressure", pressure);
-    setText("time", time);
+    setText("temp", temp.toFixed(1));
+    setText("pressure", pressure.toFixed(2));
+    setText("time", time.toFixed(1));
     setText("confidence", Math.round(score) + "%");
 
-    setWidth("tempBar", Math.min(100, temp));
-    setWidth("pressureBar", Math.min(100, (pressure / 12) * 100));
-    setWidth("timeBar", Math.min(100, (time / 30) * 100));
-    setWidth("confidenceFill", Math.max(0, Math.min(100, score)));
+    setWidth("tempBar", temp);
+    setWidth("pressureBar", (pressure / 12) * 100);
+    setWidth("timeBar", (time / 30) * 100);
+    setWidth("confidenceFill", score);
 
+    setText("tip", feedback.join(" "));
     updateStates(temp, pressure, time);
-    updateFeedback(temp, pressure, time, score);
-    updateStatus(score, temp, pressure, time);
+    updateStatus(score, label);
+
+    if (data.process_type) {
+        setText("processType", "Process Type: " + data.process_type);
+    } else if (data.segment_label) {
+        setText("processType", "Segment: " + data.segment_label);
+    }
 }
 
-function addPointToChart(data) {
-    if (!chart) return;
+function addPoint(data) {
+    const x = Number(data.elapsed_seconds || 0);
 
-    const label = data.time
-        ? new Date(data.time).toLocaleTimeString()
-        : new Date().toLocaleTimeString();
+    chart.data.datasets[0].data.push({
+        x: x,
+        y: Number(data.pressure?.current || 0)
+    });
 
-    const temp = Number(data.temperature.current);
-    const pressure = Number(data.pressure.current);
+    chart.data.datasets[1].data.push({
+        x: x,
+        y: Number(data.temperature?.current || 0)
+    });
 
-    chart.data.labels.push(label);
-    chart.data.datasets[0].data.push(temp);
-    chart.data.datasets[1].data.push(pressure);
+    chart.update("none");
+}
 
-    if (chart.data.labels.length > 30) {
-        chart.data.labels.shift();
-        chart.data.datasets[0].data.shift();
-        chart.data.datasets[1].data.shift();
+async function loadProcesses() {
+    const response = await fetch("/api/process_ids");
+    const data = await response.json();
+
+    const select = document.getElementById("processSelect");
+    select.innerHTML = "";
+
+    data.process_ids.forEach(id => {
+        const option = document.createElement("option");
+        option.value = id;
+        option.textContent = "Process " + id;
+        select.appendChild(option);
+    });
+
+    currentProcessId = data.process_ids[0];
+    select.value = currentProcessId;
+    await loadProcessSummary(currentProcessId);
+}
+
+async function loadProcessSummary(processId) {
+    const response = await fetch(`/api/process/${processId}/summary`);
+    if (!response.ok) return;
+
+    const summary = await response.json();
+    currentSegments = summary.segments || [];
+
+    setText("processType", "Process Type: " + summary.process_type);
+
+    const chartBox = document.querySelector(".chart-box h3");
+    if (chartBox) {
+        chartBox.textContent =
+            `Extraction Graph — Brew window: ${summary.brew_duration}s`;
     }
 
     chart.update("none");
 }
 
-async function loadInitialHistory() {
-    try {
-        const response = await fetch(HISTORY_URL);
-
-        if (!response.ok) {
-            console.warn("No history data yet.");
-            return;
-        }
-
-        const history = await response.json();
-
-        if (!history.length) {
-            console.warn("History is empty.");
-            return;
-        }
-
-        chart.data.labels = [];
-        chart.data.datasets[0].data = [];
-        chart.data.datasets[1].data = [];
-
-        history.forEach(item => {
-            addPointToChart(item);
-        });
-
-        const latest = history[history.length - 1];
-        lastTimestamp = latest.time;
-        updateDashboard(latest);
-
-    } catch (error) {
-        console.error("Initial history error:", error);
+function closeCurrentStream() {
+    if (currentStream) {
+        currentStream.close();
+        currentStream = null;
     }
 }
 
-async function loadLiveData() {
-    try {
-        const response = await fetch(LIVE_URL);
+async function startSimulation() {
+    if (!currentProcessId) return;
 
-        if (!response.ok) {
-            console.warn("No live InfluxDB data yet.");
-            return;
-        }
+    closeCurrentStream();
+    resetChart();
+    await loadProcessSummary(currentProcessId);
 
-        const data = await response.json();
+    currentStream = new EventSource(`/api/process/${currentProcessId}/stream`);
 
+    currentStream.onmessage = function (event) {
+        const data = JSON.parse(event.data);
         updateDashboard(data);
+        addPoint(data);
+    };
 
-        if (data.time && data.time === lastTimestamp) {
-            return;
-        }
+    currentStream.onerror = function () {
+        closeCurrentStream();
+    };
+}
 
-        lastTimestamp = data.time;
-        addPointToChart(data);
+function startRealLive() {
+    closeCurrentStream();
+    resetChart();
+    currentSegments = [];
 
-    } catch (error) {
-        console.error("Live update error:", error);
-    }
+    currentStream = new EventSource("/api/live/stream");
+
+    currentStream.onmessage = function (event) {
+        const data = JSON.parse(event.data);
+        updateDashboard(data);
+        addPoint(data);
+    };
+}
+
+async function resetLive() {
+    closeCurrentStream();
+    resetChart();
+    currentSegments = [];
+
+    await fetch("/api/live/reset", { method: "POST" });
+
+    setText("temp", "-");
+    setText("pressure", "-");
+    setText("time", "-");
+    setText("confidence", "-");
+    setText("tip", "Waiting for live data...");
+    setText("statusLabel", "Waiting...");
+    setText("statusText", "Waiting for incoming data.");
+    setText("statusIcon", "!");
 }
 
 createChart();
-loadInitialHistory();
-setInterval(loadLiveData, 1000);
+loadProcesses();
+
+document.getElementById("processSelect").addEventListener("change", async function () {
+    currentProcessId = this.value;
+    await loadProcessSummary(currentProcessId);
+});
+
+document.getElementById("simulateBtn").addEventListener("click", startSimulation);
+document.getElementById("realLiveBtn").addEventListener("click", startRealLive);
+document.getElementById("resetBtn").addEventListener("click", resetLive);

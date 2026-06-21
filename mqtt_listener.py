@@ -1,112 +1,86 @@
+import os
 import json
-import pandas as pd
+import requests
 import paho.mqtt.client as mqtt
 
-from live_predict import live_prediction
-from influx_writer import write_espresso_data
+MQTT_ENABLED = os.getenv("MQTT_ENABLED", "true").lower() == "true"
+MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_TOPIC = os.getenv("MQTT_TOPIC", "espresso/data")
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
 
-BROKER = "localhost"
-TOPIC = "espresso/data"
-LATEST_FILE = "Runtime/latest_mqtt_data.json"
+BACKEND_READING_URL = os.getenv(
+    "BACKEND_READING_URL",
+    "http://127.0.0.1:5000/api/live/reading"
+)
 
-live_buffers = {}
+if not MQTT_ENABLED:
+    print("MQTT is disabled. Set MQTT_ENABLED=true to enable.")
+    raise SystemExit(0)
 
 
-def fix_bad_json(payload):
-    payload = payload.strip().replace("{", "").replace("}", "")
-    data = {}
+def safe_float(value, default=0):
+    try:
+        return float(value)
+    except Exception:
+        return default
 
-    for part in payload.split(","):
-        key, value = part.split(":")
-        key = key.strip().replace('"', "")
-        value = value.strip().replace('"', "")
-        data[key] = float(value)
 
-    return data
+def normalize_payload(data):
+    return {
+        "process_id": int(data.get("process_id", 0)),
+        "segment_id": int(data.get("segment_id", 1)),
+        "temp": safe_float(data.get("temp", data.get("temperature", 0))),
+        "pressure": safe_float(data.get("pressure", 0)),
+        "flowRate": safe_float(data.get("flowRate", 0)),
+        "totalVolume": safe_float(data.get("totalVolume", 0)),
+        "time": safe_float(data.get("time", data.get("elapsed_seconds", 0))),
+        "quality_score": safe_float(data.get("quality_score", 0)),
+        "quality_label": data.get("quality_label", "Live reading"),
+        "feedback": data.get("feedback", ["Live data received."])
+    }
 
 
 def on_connect(client, userdata, flags, rc):
-    print("Connected to MQTT Broker")
-    client.subscribe(TOPIC)
+    print("Connected to MQTT Broker with code:", rc)
+    print("Subscribed topic:", MQTT_TOPIC)
+    client.subscribe(MQTT_TOPIC)
 
 
 def on_message(client, userdata, msg):
     try:
-        payload = msg.payload.decode()
-        print("Received:", payload)
+        raw = msg.payload.decode("utf-8")
+        print("MQTT received:", raw)
 
-        try:
-            data = json.loads(payload)
-        except Exception:
-            data = fix_bad_json(payload)
+        data = json.loads(raw)
+        payload = normalize_payload(data)
 
-        process_id = int(data.get("process_id", 1))
-        temp = float(data["temp"])
-        pressure = float(data["pressure"])
-        extraction_time = float(data["time"])
-
-        row = {
-            "process_id": process_id,
-            "temp": temp,
-            "pressure": pressure,
-            "flowRate": float(data.get("flowRate", 0)),
-            "totalVolume": float(data.get("totalVolume", 0)),
-            "preinfusion": float(data.get("preinfusion", 0)),
-            "preinfusionpause": float(data.get("preinfusionpause", 0)),
-            "setPoint": float(data.get("setPoint", 90))
-        }
-
-        if process_id not in live_buffers:
-            live_buffers[process_id] = []
-
-        live_buffers[process_id].append(row)
-
-        timeseries_df = pd.DataFrame(live_buffers[process_id])
-        prediction = live_prediction(timeseries_df)
-
-        quality_score = float(prediction["quality_score"])
-        quality_label = prediction["quality_label"]
-        model_confidence = float(prediction.get("model_confidence", quality_score))
-
-        latest_data = {
-            "process_id": process_id,
-            "temperature": {
-                "current": round(temp, 2)
-            },
-            "pressure": {
-                "current": round(pressure, 2)
-            },
-            "extractionTime": {
-                "current": extraction_time,
-                "unit": "s"
-            },
-            "prediction": {
-                "quality_score": round(quality_score, 2),
-                "quality_label": quality_label,
-                "model_confidence": round(model_confidence, 2)
-            }
-        }
-
-        with open(LATEST_FILE, "w") as file:
-            json.dump(latest_data, file)
-
-        write_espresso_data(
-            process_id=process_id,
-            temperature=temp,
-            pressure=pressure,
-            extraction_time=extraction_time,
-            quality_score=quality_score
+        response = requests.post(
+            BACKEND_READING_URL,
+            json=payload,
+            timeout=3
         )
 
-        print("Written to InfluxDB:", latest_data)
+        print("Backend response:", response.status_code)
 
     except Exception as e:
-        print("Error:", e)
+        print("MQTT listener error:", e)
 
 
 client = mqtt.Client()
+
+if MQTT_USERNAME:
+    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
 client.on_connect = on_connect
 client.on_message = on_message
 
-client.connect(BROKER, 1883, 60)
+client.connect(MQTT_BROKER, MQTT_PORT, 60)
+
+print("MQTT listener started")
+print("Broker:", MQTT_BROKER)
+print("Port:", MQTT_PORT)
+print("Topic:", MQTT_TOPIC)
+
 client.loop_forever()

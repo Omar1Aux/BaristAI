@@ -310,4 +310,35 @@ footer {
         font-size: 11px;
         padding: 11px;
     }
+} 
+
+.process-controls {
+    margin-top: 14px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.process-controls select,
+.process-controls button {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-weight: 700;
+    background: #fff3df;
+    color: #3a1e10;
+    box-shadow: 0 6px 16px rgba(70, 35, 10, 0.18);
+}
+
+.process-controls button {
+    cursor: pointer;
+    background: #8b451c;
+    color: #fff3df;
+}
+
+#processType {
+    font-weight: 800;
+    color: #4b2a16;
 }

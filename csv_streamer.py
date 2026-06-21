@@ -1,57 +1,85 @@
-import time
+import os
 import json
+import time
+from pathlib import Path
+
 import pandas as pd
 import paho.mqtt.client as mqtt
 
-BROKER = "localhost"
-PORT = 1883
-TOPIC = "espresso/data"
 
-DATA_FILE = "data/clean_brew_windows.parquet"
-PROCESS_ID = 5
-DELAY_SECONDS = 1
-ROW_TIME_SECONDS = 0.5
+BASE_DIR = Path(__file__).resolve().parent
+
+DATA_FILE = os.getenv(
+    "DATA_FILE",
+    str(BASE_DIR / "data" / "rancilio-portafilter-dataset.parquet")
+)
+
+MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_TOPIC = os.getenv("MQTT_TOPIC", "espresso/data")
+
+PROCESS_ID = int(os.getenv("PROCESS_ID", "15"))
+DELAY_SECONDS = float(os.getenv("DELAY_SECONDS", "1"))
+
+
+def load_data():
+    df = pd.read_parquet(DATA_FILE).copy()
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+    df["process_id"] = pd.to_numeric(df["process_id"], errors="coerce").astype("Int64")
+    df["segment_id"] = pd.to_numeric(df["segment_id"], errors="coerce").astype("Int64")
+
+    df = df.dropna(subset=["process_id", "timestamp"])
+    df["process_id"] = df["process_id"].astype(int)
+    df["segment_id"] = df["segment_id"].fillna(0).astype(int)
+
+    df = df.sort_values(["process_id", "timestamp"]).reset_index(drop=True)
+    return df
 
 
 def main():
-    df = pd.read_parquet(DATA_FILE)
+    df = load_data()
 
-    process_data = df[df["process_id"] == PROCESS_ID].reset_index(drop=True)
+    process_df = df[df["process_id"] == PROCESS_ID].copy().reset_index(drop=True)
 
-    if process_data.empty:
+    if process_df.empty:
         print(f"No data found for process_id {PROCESS_ID}")
         return
 
-    client = mqtt.Client()
-    client.connect(BROKER, PORT, 60)
+    start_time = process_df["timestamp"].iloc[0]
+    process_df["elapsed_seconds"] = (
+        process_df["timestamp"] - start_time
+    ).dt.total_seconds()
 
-    print("CSV/Parquet streamer started")
-    print(f"Data file: {DATA_FILE}")
-    print(f"Streaming process_id {PROCESS_ID}")
-    print(f"Rows: {len(process_data)}")
+    client = mqtt.Client()
+    client.connect(MQTT_BROKER, MQTT_PORT, 60)
+
+    print("CSV streamer started")
+    print("Data:", DATA_FILE)
+    print("Process:", PROCESS_ID)
+    print("Topic:", MQTT_TOPIC)
+    print("Rows:", len(process_df))
     print("Press CTRL + C to stop")
 
     try:
-        for index, row in process_data.iterrows():
+        for _, row in process_df.iterrows():
             payload = {
                 "process_id": int(row["process_id"]),
-                "temp": round(float(row["temp"]), 2),
-                "pressure": round(float(row["pressure"]), 2),
-                "flowRate": round(float(row["flowRate"]), 2),
-                "totalVolume": round(float(row["totalVolume"]), 2),
-                "preinfusion": float(row["preinfusion"]),
-                "preinfusionpause": float(row["preinfusionpause"]),
-                "setPoint": float(row["setPoint"]),
-                "time": round(index * ROW_TIME_SECONDS, 1)
+                "segment_id": int(row["segment_id"]),
+                "temp": round(float(row.get("temp", 0)), 2),
+                "pressure": round(float(row.get("pressure", 0)), 2),
+                "flowRate": round(float(row.get("flowRate", 0)), 2),
+                "totalVolume": round(float(row.get("totalVolume", 0)), 2),
+                "time": round(float(row["elapsed_seconds"]), 2),
             }
 
-            client.publish(TOPIC, json.dumps(payload))
+            client.publish(MQTT_TOPIC, json.dumps(payload))
             print("Published:", payload)
 
             time.sleep(DELAY_SECONDS)
 
     except KeyboardInterrupt:
-        print("\nStreamer stopped")
+        print("\nStreamer stopped.")
 
     finally:
         client.disconnect()

@@ -1,0 +1,10 @@
+flask
+flask-cors
+pandas
+pyarrow
+paho-mqtt
+requests
+python-dotenv
+matplotlib
+scikit-learn
+joblib

@@ -2,13 +2,16 @@ from predict import predict_quality
 
 
 def live_prediction(timeseries_df):
+    if timeseries_df.empty:
+        return {
+            "quality_score": 0,
+            "quality_label": "Invalid / Other",
+            "model_confidence": 0,
+            "note": "No live data available."
+        }
 
     metrics = {
-        "duration": len(timeseries_df),
-
-        "volume_delta":
-            timeseries_df["totalVolume"].max()
-            - timeseries_df["totalVolume"].min(),
+        "brew_duration": len(timeseries_df),
 
         "temp_avg": timeseries_df["temp"].mean(),
         "temp_min": timeseries_df["temp"].min(),
@@ -20,18 +23,23 @@ def live_prediction(timeseries_df):
         "pressure_max": timeseries_df["pressure"].max(),
         "pressure_std": timeseries_df["pressure"].std(),
 
-        "flow_avg": timeseries_df["flowRate"].mean(),
-        "flow_min": timeseries_df["flowRate"].min(),
-        "flow_max": timeseries_df["flowRate"].max(),
-        "flow_std": timeseries_df["flowRate"].std(),
+        "volume_delta": (
+            timeseries_df["totalVolume"].max()
+            - timeseries_df["totalVolume"].min()
+        ),
 
-        "preinfusion": timeseries_df["preinfusion"].max(),
-        "preinfusionpause": timeseries_df["preinfusionpause"].max(),
+        "preinfusion": timeseries_df["preinfusion"].max()
+            if "preinfusion" in timeseries_df.columns else 0,
+
+        "preinfusionpause": timeseries_df["preinfusionpause"].max()
+            if "preinfusionpause" in timeseries_df.columns else 0,
+
         "setPoint": timeseries_df["setPoint"].max()
+            if "setPoint" in timeseries_df.columns else 90,
     }
 
     metrics = {
-        k: (0 if str(v) == "nan" else float(v))
+        k: 0 if str(v) == "nan" else float(v)
         for k, v in metrics.items()
     }
 

@@ -1,98 +1,49 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
-import pandas as pd
-import subprocess
-import csv
 import json
-from io import StringIO
+import time
+from pathlib import Path
 
-from predict import predict_quality
-from live_predict import live_prediction
-from influx_writer import write_espresso_data
+from core.data_engine import (
+    get_process_ids,
+    get_process,
+    get_process_summary,
+    get_timeseries,
+    evaluate_process,
+)
 
 app = Flask(__name__)
 CORS(app)
 
-INFLUX_PATH = r"C:\BaristAI\influxdb3-core-3.9.3-windows_amd64\influxdb3.exe"
-DATABASE = "baristai"
-MEASUREMENT = "espresso"
-HISTORY_LIMIT = 30
-LATEST_FILE = "Runtime/latest_mqtt_data.json"
+BASE_DIR = Path(__file__).resolve().parent
 
-segmented_data = pd.read_parquet("data/clean_brew_windows.parquet")
-
-try:
-    metrics = pd.read_parquet("data/process_metrics.parquet").reset_index()
-except Exception:
-    metrics = pd.DataFrame()
-
-try:
-    quality = pd.read_parquet("data/process_quality_scores.parquet").reset_index()
-except Exception:
-    quality = pd.DataFrame()
-
-try:
-    feedback = pd.read_parquet("data/process_feedback.parquet").reset_index()
-except Exception:
-    feedback = pd.DataFrame()
-
-live_counter = {}
+latest_live_data = None
+live_history = []
 
 
-def query_influx(sql):
-    command = [
-        INFLUX_PATH,
-        "query",
-        "--database",
-        DATABASE,
-        "--format",
-        "csv",
-        sql
-    ]
-
-    result = subprocess.run(command, capture_output=True, text=True)
-
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr or result.stdout)
-
-    reader = csv.DictReader(StringIO(result.stdout))
-    return list(reader)
-
-
-def quality_label_from_score(score):
-    if score >= 70:
-        return "Good extraction"
-    if score >= 40:
-        return "Warning extraction"
-    return "Poor extraction"
-
-
-def format_influx_row(row):
-    score = float(row.get("quality_score", 0))
-
+def dashboard_payload(row, evaluation):
     return {
-        "time": row.get("time"),
-        "process_id": int(float(row.get("process_id", 1))),
+        "process_id": row.get("process_id"),
+        "process_type": row.get("segment_label", "Unknown"),
+        "segment_id": row.get("segment_id"),
+        "segment_label": row.get("segment_label", "Unknown"),
+        "elapsed_seconds": row.get("elapsed_seconds", 0),
         "temperature": {
-            "current": round(float(row.get("temperature", 0)), 2)
+            "current": round(row.get("temperature", 0), 2)
         },
         "pressure": {
-            "current": round(float(row.get("pressure", 0)), 2)
+            "current": round(row.get("pressure", 0), 2)
         },
         "extractionTime": {
-            "current": round(float(row.get("extraction_time", 0)), 2),
+            "current": round(row.get("elapsed_seconds", 0), 2),
             "unit": "s"
         },
         "prediction": {
-            "quality_score": round(score, 2),
-            "quality_label": quality_label_from_score(score)
+            "quality_score": evaluation.get("quality_score", 0),
+            "quality_label": evaluation.get("quality_label", "Unknown"),
+            "feedback": evaluation.get("feedback", [])
         }
     }
-
-
-def load_latest_json():
-    with open(LATEST_FILE, "r") as file:
-        return json.load(file)
 
 
 @app.route("/")
@@ -115,145 +66,154 @@ def coffee_bg():
     return send_from_directory(".", "coffee-bg.png")
 
 
-@app.route("/predict", methods=["POST"])
-def predict():
-    data = request.json
-    result = predict_quality(data)
-    return jsonify(result)
+@app.route("/processes")
+def legacy_processes():
+    return jsonify({"process_ids": get_process_ids()})
+
+
+@app.route("/api/process_ids")
+def api_process_ids():
+    return jsonify({"process_ids": get_process_ids()})
+
+
+@app.route("/api/process/<int:process_id>/summary")
+def api_process_summary(process_id):
+    summary = get_process_summary(process_id)
+
+    if summary is None:
+        return jsonify({"error": "Process not found"}), 404
+
+    return jsonify(summary)
+
+
+@app.route("/api/process/<int:process_id>/timeseries")
+def api_process_timeseries(process_id):
+    rows = get_timeseries(process_id)
+
+    if not rows:
+        return jsonify({"error": "Process not found"}), 404
+
+    return jsonify(rows)
+
+
+@app.route("/api/process/<int:process_id>/stream")
+def api_process_stream(process_id):
+    rows = get_timeseries(process_id)
+    evaluation = evaluate_process(process_id)
+
+    if not rows:
+        return jsonify({"error": "Process not found"}), 404
+
+    def generate():
+        global latest_live_data, live_history
+
+        for row in rows:
+            payload = dashboard_payload(row, evaluation)
+
+            latest_live_data = payload
+            live_history.append(payload)
+            live_history = live_history[-100:]
+
+            yield f"data: {json.dumps(payload)}\n\n"
+            time.sleep(1)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream"
+    )
+
+
+@app.route("/api/live/reading", methods=["POST"])
+def api_live_reading():
+    global latest_live_data, live_history
+
+    data = request.json or {}
+
+    row = {
+        "process_id": int(data.get("process_id", 0)),
+        "segment_id": int(data.get("segment_id", 1)),
+        "segment_label": data.get("segment_label", "Live"),
+        "elapsed_seconds": float(data.get("elapsed_seconds", data.get("time", 0))),
+        "temperature": float(data.get("temp", data.get("temperature", 0))),
+        "pressure": float(data.get("pressure", 0)),
+        "flowRate": float(data.get("flowRate", 0)),
+        "totalVolume": float(data.get("totalVolume", 0)),
+    }
+
+    evaluation = {
+        "quality_score": float(data.get("quality_score", 0)),
+        "quality_label": data.get("quality_label", "Live reading"),
+        "feedback": data.get("feedback", ["Live data received."])
+    }
+
+    latest_live_data = dashboard_payload(row, evaluation)
+    live_history.append(latest_live_data)
+    live_history = live_history[-100:]
+
+    return jsonify({"status": "ok", "latest": latest_live_data})
+
+
+@app.route("/api/live/status")
+def api_live_status():
+    return jsonify({
+        "has_live_data": latest_live_data is not None,
+        "latest": latest_live_data,
+        "history_size": len(live_history)
+    })
+
+
+@app.route("/api/live/reset", methods=["POST"])
+def api_live_reset():
+    global latest_live_data, live_history
+
+    latest_live_data = None
+    live_history = []
+
+    return jsonify({"status": "reset"})
+
+
+@app.route("/api/live/stream")
+def api_live_stream():
+    def generate():
+        last_payload = None
+
+        while True:
+            if latest_live_data is not None and latest_live_data != last_payload:
+                last_payload = latest_live_data
+                yield f"data: {json.dumps(latest_live_data)}\n\n"
+
+            time.sleep(1)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream"
+    )
 
 
 @app.route("/influx/live")
-def influx_live():
-    try:
-        return jsonify(load_latest_json())
-    except Exception:
-        try:
-            sql = f"""
-            SELECT time, process_id, temperature, pressure, extraction_time, quality_score
-            FROM {MEASUREMENT}
-            ORDER BY time DESC
-            LIMIT 1
-            """
+def legacy_live():
+    if latest_live_data is None:
+        return jsonify({"error": "No live data yet"}), 404
 
-            rows = query_influx(sql)
-
-            if not rows:
-                return jsonify({"error": "No live data found"}), 404
-
-            return jsonify(format_influx_row(rows[0]))
-
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+    return jsonify(latest_live_data)
 
 
 @app.route("/history")
-def history():
-    try:
-        sql = f"""
-        SELECT time, process_id, temperature, pressure, extraction_time, quality_score
-        FROM {MEASUREMENT}
-        ORDER BY time DESC
-        LIMIT {HISTORY_LIMIT}
-        """
-
-        rows = query_influx(sql)
-        rows.reverse()
-
-        return jsonify([format_influx_row(row) for row in rows])
-
-    except Exception:
-        try:
-            return jsonify([load_latest_json()])
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+def legacy_history():
+    return jsonify(live_history[-30:])
 
 
 @app.route("/live/predict/<int:process_id>")
-def live_predict_endpoint(process_id):
-    process_data = segmented_data[
-        segmented_data["process_id"] == process_id
-    ].reset_index(drop=True)
+def legacy_live_predict(process_id):
+    rows = get_timeseries(process_id)
+    evaluation = evaluate_process(process_id)
 
-    if process_data.empty:
-        return jsonify({"error": "Process ID not found"}), 404
+    if not rows:
+        return jsonify({"error": "Process not found"}), 404
 
-    index = live_counter.get(process_id, 0)
-
-    if index >= len(process_data):
-        index = 0
-
-    current_row = process_data.iloc[index]
-    current_slice = process_data.iloc[:index + 1]
-
-    live_counter[process_id] = index + 1
-
-    prediction = live_prediction(current_slice)
-
-    temperature = round(float(current_row["temp"]), 2)
-    pressure = round(float(current_row["pressure"]), 2)
-    extraction_time = round(index * 0.5, 1)
-    quality_score = round(float(prediction["quality_score"]), 2)
-    quality_label = prediction["quality_label"]
-
-    try:
-        write_espresso_data(
-            process_id,
-            temperature,
-            pressure,
-            extraction_time,
-            quality_score
-        )
-    except Exception as e:
-        print("InfluxDB write error:", e)
-
-    return jsonify({
-        "process_id": process_id,
-        "temperature": {
-            "current": temperature,
-            "avg": round(float(current_slice["temp"].mean()), 2)
-        },
-        "pressure": {
-            "current": pressure,
-            "avg": round(float(current_slice["pressure"].mean()), 2)
-        },
-        "extractionTime": {
-            "current": extraction_time,
-            "unit": "s"
-        },
-        "prediction": {
-            "quality_score": quality_score,
-            "quality_label": quality_label,
-            "model_confidence": prediction.get("model_confidence", quality_score)
-        }
-    })
-
-
-@app.route("/processes")
-def get_processes():
-    return jsonify({
-        "process_ids": sorted(segmented_data["process_id"].unique().tolist())
-    })
-
-
-@app.route("/quality/<int:process_id>")
-def get_quality(process_id):
-    if quality.empty:
-        return jsonify({"error": "Quality file not available"}), 404
-
-    quality_row = quality[quality["process_id"] == process_id]
-
-    if quality_row.empty:
-        return jsonify({"error": "Process ID not found"}), 404
-
-    q = quality_row.iloc[0]
-
-    return jsonify({
-        "process_id": process_id,
-        "quality_score": float(q["quality_score"]),
-        "quality_label": q["quality_label"],
-        "quality_notes": q["quality_notes"]
-    })
+    row = rows[0]
+    return jsonify(dashboard_payload(row, evaluation))
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, threaded=True)
