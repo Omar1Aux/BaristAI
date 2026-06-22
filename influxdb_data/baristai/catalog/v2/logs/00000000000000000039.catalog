@@ -1,0 +1,2 @@
+idb3.004.l`å
+2{"catalog_batch":{"Node":{"time_ns":1782167787785660500,"node_catalog_id":0,"node_id":"baristai","ops":[{"RegisterNode":{"node_id":"baristai","instance_id":"5f986200-4a0e-4a2d-b5f8-31c6225c50b9","registered_time_ns":1782167787785660500,"core_count":16,"mode":["Core"],"process_uuid":"1384ee52-2518-4b60-bf28-914e31f96bfb","cli_params":"{\"data-dir\":\"C:\\\\BaristAI\\\\influxdb_data\",\"without-auth\":\"*******\",\"object-store\":\"file\",\"node-id\":\"baristai\"}"}}]}},"sequence_number":39}
