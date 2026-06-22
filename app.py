@@ -6,7 +6,6 @@ from pathlib import Path
 
 from core.data_engine import (
     get_process_ids,
-    get_process,
     get_process_summary,
     get_timeseries,
     evaluate_process,
@@ -21,10 +20,55 @@ latest_live_data = None
 live_history = []
 
 
+def evaluate_live_reading(row):
+    temp = row["temperature"]
+    pressure = row["pressure"]
+    extraction = row["elapsed_seconds"]
+
+    score = 100
+    feedback = []
+
+    if temp < 90:
+        score -= 25
+        feedback.append("Temperature is low. Allow more warm-up time or check temperature stability.")
+    elif temp > 96:
+        score -= 25
+        feedback.append("Temperature is high. Consider a cooling flush or reduce overheating.")
+
+    if pressure < 8.5:
+        score -= 30
+        feedback.append("Pressure is low. Grind finer or increase puck resistance.")
+    elif pressure > 10.5:
+        score -= 30
+        feedback.append("Pressure is high. Grind coarser or reduce puck resistance.")
+
+    if extraction < 25:
+        score -= 20
+        feedback.append("Extraction is too short. Grind finer or increase dose.")
+    elif extraction > 30:
+        score -= 20
+        feedback.append("Extraction is too long. Grind coarser or reduce dose.")
+
+    score = max(0, min(100, score))
+
+    if score >= 75:
+        label = "Good extraction"
+    elif score >= 45:
+        label = "Warning extraction"
+    else:
+        label = "Poor extraction"
+
+    return {
+        "quality_score": round(score, 2),
+        "quality_label": label,
+        "feedback": feedback if feedback else ["Extraction looks stable."]
+    }
+
+
 def dashboard_payload(row, evaluation):
     return {
         "process_id": row.get("process_id"),
-        "process_type": row.get("segment_label", "Unknown"),
+        "process_type": row.get("process_type", row.get("segment_label", "Live")),
         "segment_id": row.get("segment_id"),
         "segment_label": row.get("segment_label", "Unknown"),
         "elapsed_seconds": row.get("elapsed_seconds", 0),
@@ -99,15 +143,19 @@ def api_process_timeseries(process_id):
 @app.route("/api/process/<int:process_id>/stream")
 def api_process_stream(process_id):
     rows = get_timeseries(process_id)
+    summary = get_process_summary(process_id)
     evaluation = evaluate_process(process_id)
 
     if not rows:
         return jsonify({"error": "Process not found"}), 404
 
+    process_type = summary.get("process_type", "Unknown") if summary else "Unknown"
+
     def generate():
         global latest_live_data, live_history
 
         for row in rows:
+            row["process_type"] = process_type
             payload = dashboard_payload(row, evaluation)
 
             latest_live_data = payload
@@ -117,10 +165,7 @@ def api_process_stream(process_id):
             yield f"data: {json.dumps(payload)}\n\n"
             time.sleep(1)
 
-    return Response(
-        stream_with_context(generate()),
-        mimetype="text/event-stream"
-    )
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 
 @app.route("/api/live/reading", methods=["POST"])
@@ -129,10 +174,21 @@ def api_live_reading():
 
     data = request.json or {}
 
+    segment_id = int(data.get("segment_id", 1))
+
+    segment_labels = {
+        1: "Brewing",
+        2: "Flushing",
+        3: "Steam",
+        4: "Heating",
+        5: "Idle"
+    }
+
     row = {
         "process_id": int(data.get("process_id", 0)),
-        "segment_id": int(data.get("segment_id", 1)),
-        "segment_label": data.get("segment_label", "Live"),
+        "segment_id": segment_id,
+        "segment_label": segment_labels.get(segment_id, "Live"),
+        "process_type": "Live",
         "elapsed_seconds": float(data.get("elapsed_seconds", data.get("time", 0))),
         "temperature": float(data.get("temp", data.get("temperature", 0))),
         "pressure": float(data.get("pressure", 0)),
@@ -140,48 +196,8 @@ def api_live_reading():
         "totalVolume": float(data.get("totalVolume", 0)),
     }
 
-    temp = row["temperature"]
-pressure = row["pressure"]
-extraction = row["elapsed_seconds"]
+    evaluation = evaluate_live_reading(row)
 
-score = 100
-feedback = []
-
-if temp < 90:
-    score -= 25
-    feedback.append("Temperature is low. Allow more warm-up time or check temperature stability.")
-elif temp > 96:
-    score -= 25
-    feedback.append("Temperature is high. Consider a cooling flush or reduce overheating.")
-
-if pressure < 8.5:
-    score -= 30
-    feedback.append("Pressure is low. Grind finer or increase puck resistance.")
-elif pressure > 10.5:
-    score -= 30
-    feedback.append("Pressure is high. Grind coarser or reduce puck resistance.")
-
-if extraction < 25:
-    score -= 20
-    feedback.append("Extraction is too short. Grind finer or increase dose.")
-elif extraction > 30:
-    score -= 20
-    feedback.append("Extraction is too long. Grind coarser or reduce dose.")
-
-score = max(0, min(100, score))
-
-if score >= 75:
-    label = "Good extraction"
-elif score >= 45:
-    label = "Warning extraction"
-else:
-    label = "Poor extraction"
-
-evaluation = {
-    "quality_score": score,
-    "quality_label": label,
-    "feedback": feedback if feedback else ["Extraction looks stable."]
-}
     latest_live_data = dashboard_payload(row, evaluation)
     live_history.append(latest_live_data)
     live_history = live_history[-100:]
@@ -220,10 +236,7 @@ def api_live_stream():
 
             time.sleep(1)
 
-    return Response(
-        stream_with_context(generate()),
-        mimetype="text/event-stream"
-    )
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 
 @app.route("/influx/live")
