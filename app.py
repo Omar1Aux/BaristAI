@@ -140,12 +140,48 @@ def api_live_reading():
         "totalVolume": float(data.get("totalVolume", 0)),
     }
 
-    evaluation = {
-        "quality_score": float(data.get("quality_score", 0)),
-        "quality_label": data.get("quality_label", "Live reading"),
-        "feedback": data.get("feedback", ["Live data received."])
-    }
+    temp = row["temperature"]
+pressure = row["pressure"]
+extraction = row["elapsed_seconds"]
 
+score = 100
+feedback = []
+
+if temp < 90:
+    score -= 25
+    feedback.append("Temperature is low. Allow more warm-up time or check temperature stability.")
+elif temp > 96:
+    score -= 25
+    feedback.append("Temperature is high. Consider a cooling flush or reduce overheating.")
+
+if pressure < 8.5:
+    score -= 30
+    feedback.append("Pressure is low. Grind finer or increase puck resistance.")
+elif pressure > 10.5:
+    score -= 30
+    feedback.append("Pressure is high. Grind coarser or reduce puck resistance.")
+
+if extraction < 25:
+    score -= 20
+    feedback.append("Extraction is too short. Grind finer or increase dose.")
+elif extraction > 30:
+    score -= 20
+    feedback.append("Extraction is too long. Grind coarser or reduce dose.")
+
+score = max(0, min(100, score))
+
+if score >= 75:
+    label = "Good extraction"
+elif score >= 45:
+    label = "Warning extraction"
+else:
+    label = "Poor extraction"
+
+evaluation = {
+    "quality_score": score,
+    "quality_label": label,
+    "feedback": feedback if feedback else ["Extraction looks stable."]
+}
     latest_live_data = dashboard_payload(row, evaluation)
     live_history.append(latest_live_data)
     live_history = live_history[-100:]
