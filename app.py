@@ -9,6 +9,8 @@ from core.data_engine import (
     get_process_summary,
     get_timeseries,
     evaluate_process,
+    evaluate_live_reading,
+    segment_label,
 )
 
 app = Flask(__name__)
@@ -79,8 +81,14 @@ def dashboard_payload(row, evaluation):
             "current": round(row.get("pressure", 0), 2)
         },
         "extractionTime": {
-            "current": round(row.get("elapsed_seconds", 0), 2),
-            "unit": "s"
+            "current": round(row.get("brew_elapsed_seconds", 0), 2),
+            "unit": "s",
+            "source": "brewing segment only"
+        },
+        "flowRate": {
+            "current": round(row.get("flowRate", 0), 2),
+            "unit": "ml/s",
+            "display_only": True
         },
         "prediction": {
             "quality_score": evaluation.get("quality_score", 0),
@@ -196,6 +204,7 @@ def api_live_reading():
         "totalVolume": float(data.get("totalVolume", 0)),
     }
 
+    row["brew_elapsed_seconds"] = row["elapsed_seconds"] if row["segment_id"] == 1 else 0
     evaluation = evaluate_live_reading(row)
 
     latest_live_data = dashboard_payload(row, evaluation)

@@ -217,6 +217,7 @@ function updateDashboard(data) {
     const pressure = Number(data.pressure?.current || 0);
     const time = Number(data.extractionTime?.current || data.elapsed_seconds || 0);
     const score = Number(data.prediction?.quality_score || 0);
+    const flowRate = Number(data.flowRate?.current || 0);
     const label = data.prediction?.quality_label || "Unknown";
     const feedback = data.prediction?.feedback || ["Waiting for feedback."];
 
@@ -224,6 +225,7 @@ function updateDashboard(data) {
     setText("pressure", pressure.toFixed(2));
     setText("time", time.toFixed(1));
     setText("confidence", Math.round(score) + "%");
+    setText("flowRate", flowRate.toFixed(2));
 
     setWidth("tempBar", temp);
     setWidth("pressureBar", (pressure / 12) * 100);
@@ -346,6 +348,7 @@ async function resetLive() {
     setText("pressure", "-");
     setText("time", "-");
     setText("confidence", "-");
+    setText("flowRate", "-");
     setText("tip", "Waiting for live data...");
     setText("statusLabel", "Waiting...");
     setText("statusText", "Waiting for incoming data.");

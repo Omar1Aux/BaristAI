@@ -6,3 +6,6 @@ venv/
 .venv/
 node_modules/
 .env
+
+influxdb_data/
+Runtime/latest_mqtt_data.json
