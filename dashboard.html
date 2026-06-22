@@ -44,9 +44,10 @@
         <div class="card orange">
             <h3>⏱ Extraction Time</h3>
             <div class="value"><span id="time">-</span> s</div>
-            <p>Target: 25–30 s</p>
+            <p>Target: 25–30 s (brewing only)</p>
             <div class="bar"><div id="timeBar"></div></div>
             <div class="state" id="timeState">Waiting...</div>
+            <p class="display-only">Flow rate: <span id="flowRate">-</span> ml/s (display only)</p>
         </div>
     </section>
 
@@ -68,7 +69,7 @@
             <p id="statusText">Waiting for incoming data.</p>
 
             <div class="confidence">
-                <span>CONFIDENCE</span>
+                <span>RULE SCORE</span>
                 <strong id="confidence">-</strong>
             </div>
 

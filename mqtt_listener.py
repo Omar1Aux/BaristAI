@@ -35,10 +35,7 @@ def normalize_payload(data):
         "pressure": safe_float(data.get("pressure", 0)),
         "flowRate": safe_float(data.get("flowRate", 0)),
         "totalVolume": safe_float(data.get("totalVolume", 0)),
-        "time": safe_float(data.get("time", data.get("elapsed_seconds", 0))),
-        "quality_score": safe_float(data.get("quality_score", 0)),
-        "quality_label": data.get("quality_label", "Live reading"),
-        "feedback": data.get("feedback", ["Live data received."])
+        "time": safe_float(data.get("time", data.get("elapsed_seconds", 0)))
     }
 
 
