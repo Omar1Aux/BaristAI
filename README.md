@@ -17,7 +17,8 @@ The project combines:
 
 # 📸 Dashboard Preview
 
-> Add a screenshot of the final dashboard here.
+.
+<img width="1280" height="800" alt="image" src="https://github.com/user-attachments/assets/2b7eeabd-3d82-4491-a133-2b2a322ccb3e" />
 
 ```text
 BaristAI Dashboard
