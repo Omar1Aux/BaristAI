@@ -1,0 +1,72 @@
+{
+  "version": "1",
+  "node_id": "baristai",
+  "next_file_id": 20,
+  "snapshot_sequence_number": 4,
+  "wal_file_sequence_number": 3360,
+  "catalog_sequence_number": 31,
+  "parquet_size_bytes": 25919,
+  "row_count": 785,
+  "min_time": 1781692800182063800,
+  "max_time": 1781696980148670800,
+  "databases": [
+    [
+      1,
+      {
+        "tables": [
+          [
+            0,
+            [
+              {
+                "id": 15,
+                "path": "baristai/dbs/1/0/2026-06-17/11-10/0000003360.parquet",
+                "size_bytes": 6608,
+                "row_count": 297,
+                "chunk_time": 1781694600000000000,
+                "min_time": 1781694600976464000,
+                "max_time": 1781695080199834700
+              },
+              {
+                "id": 16,
+                "path": "baristai/dbs/1/0/2026-06-17/10-40/0000003360.parquet",
+                "size_bytes": 6189,
+                "row_count": 241,
+                "chunk_time": 1781692800000000000,
+                "min_time": 1781692800182063800,
+                "max_time": 1781693399683468500
+              },
+              {
+                "id": 17,
+                "path": "baristai/dbs/1/0/2026-06-17/11-00/0000003360.parquet",
+                "size_bytes": 4864,
+                "row_count": 116,
+                "chunk_time": 1781694000000000000,
+                "min_time": 1781694000647050300,
+                "max_time": 1781694599990823600
+              },
+              {
+                "id": 18,
+                "path": "baristai/dbs/1/0/2026-06-17/11-40/0000003360.parquet",
+                "size_bytes": 3600,
+                "row_count": 29,
+                "chunk_time": 1781696400000000000,
+                "min_time": 1781696952134493700,
+                "max_time": 1781696980148670800
+              },
+              {
+                "id": 19,
+                "path": "baristai/dbs/1/0/2026-06-17/10-50/0000003360.parquet",
+                "size_bytes": 4658,
+                "row_count": 102,
+                "chunk_time": 1781693400000000000,
+                "min_time": 1781693400683363600,
+                "max_time": 1781693999647126100
+              }
+            ]
+          ]
+        ]
+      }
+    ]
+  ],
+  "removed_files": []
+}
