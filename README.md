@@ -1,86 +1,70 @@
-# BaristAI – Real-Time Espresso Analytics Dashboard
+# BaristAI
 
-BaristAI is a real-time espresso extraction monitoring system.
-It simulates live espresso machine data, streams readings through MQTT, stores process data in InfluxDB, and displays extraction metrics and AI-based feedback on a web dashboard.
+**BaristAI** is a process-aware espresso monitoring dashboard.
 
-## Main Features
+It analyzes espresso machine process data using `process_id` and `segment_id`, streams historical readings from the Flask backend, provides rule-based extraction feedback, and is prepared for future real-time integration using MQTT and ESP32 devices.
 
-* Real-time espresso dashboard
-* MQTT-based live data streaming
-* InfluxDB time-series storage
-* AI-based extraction quality prediction
-* Temperature, pressure, and extraction time monitoring
-* Smart feedback and confidence score
+---
 
-## Project Pipeline
+## Project Idea
 
-1. `csv_streamer.py` streams espresso readings from prepared data.
-2. Mosquitto receives the readings on the MQTT topic.
-3. `mqtt_listener.py` listens for incoming MQTT data.
-4. `live_predict.py` extracts live features.
-5. `predict.py` loads the trained AI model from `quality_model.pkl`.
-6. `influx_writer.py` writes data into InfluxDB.
-7. `app.py` provides Flask API endpoints.
-8. `dashboard.html`, `dashboard.js`, and `style.css` display the dashboard.
+The goal of BaristAI is to transform raw espresso machine sensor data into useful visual feedback.
 
-## How to Run
+Instead of treating every process as a coffee shot, BaristAI understands that one `process_id` represents one machine process, which may be:
 
-Run the following files in order:
+- Brewing
+- Flushing
+- Steam
+- Heating
+- Idle
+- Invalid / Other
 
-1. `start_influx.bat`
-2. `start_flask.bat`
-3. `start_mqtt_listener.bat`
-4. `start_csv_streamer.bat`
+This makes the project process-aware and closer to real espresso machine behavior.
 
-Then open:
+---
 
-http://127.0.0.1:5000/
+## Key Features
 
-## AI Model
+- Process-aware dashboard
+- Uses `process_id` as the main identifier
+- Uses `segment_id` to understand process phases
+- Calculates real brew/extraction duration from the brewing segment
+- Server-side streaming using Server-Sent Events
+- Historical process simulation from backend
+- MQTT-ready live data pipeline
+- Rule-based espresso feedback
+- Rule-derived machine learning model
+- Temperature, pressure, and extraction time monitoring
+- Segment-colored pressure and temperature chart
+- Clean Flask backend and vanilla HTML/CSS/JavaScript frontend
 
-The AI module was trained on cleaned espresso shot data.
-The workflow included:
+---
 
-* Data inspection
-* Cleaning invalid processes
-* Extracting valid brew windows
-* Feature engineering
-* Label creation
-* Model comparison
+## Process and Segment Meaning
 
-The tested models were:
+Each `process_id` is a unique machine process.
 
-* Logistic Regression
-* Random Forest
-* Gradient Boosting
+Not every process is a coffee extraction.
 
-The final selected model is stored as:
+`segment_id` meaning:
 
-`quality_model.pkl`
+| segment_id | Meaning |
+|---|---|
+| 1 | Brewing |
+| 2 | Flushing |
+| 3 | Steam |
+| 4 | Heating |
+| 5 | Idle |
 
-## Main Files
+The dashboard visualizes one process at a time and colors the chart based on these segments.
 
-* `app.py` – Flask backend
-* `dashboard.html` – dashboard structure
-* `dashboard.js` – dashboard live updates
-* `style.css` – dashboard styling
-* `csv_streamer.py` – data streaming simulation
-* `mqtt_listener.py` – MQTT listener
-* `influx_writer.py` – InfluxDB writer
-* `predict.py` – AI prediction logic
-* `live_predict.py` – live feature extraction
-* `quality_model.pkl` – trained AI model
+---
 
-## Folder Structure
+## Data Source
 
-* `data/` – cleaned datasets and AI training files
-* `data_old/` – old or archived data files
-* `scripts/` – data cleaning, feature engineering, and training scripts
-* `Runtime/` – runtime files and backups
-* `Archive/` – old scripts, images, and plots
-* `influxdb_data/` – local InfluxDB storage
+The main dataset is stored as a Parquet file inside the `data/` folder.
 
-## Notes
+The backend reads the dataset through:
 
-This project is designed as a demonstration system.
-The current CSV streamer simulates real machine data and can later be replaced by direct data from the real espresso machine or Prokur system.
+```text
+core/data_engine.py
