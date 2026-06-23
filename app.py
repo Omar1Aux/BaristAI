@@ -20,7 +20,16 @@ latest_live_data = None
 live_history = []
 
 
-def dashboard_payload(row, evaluation):
+def dashboard_payload(row, evaluation, use_evaluation_metrics=False):
+    temperature_current = row.get("temperature", 0)
+    pressure_current = row.get("pressure", 0)
+    extraction_current = row.get("brew_elapsed_seconds", 0)
+
+    if use_evaluation_metrics:
+        temperature_current = evaluation.get("temperature_avg", temperature_current)
+        pressure_current = evaluation.get("pressure_avg", pressure_current)
+        extraction_current = evaluation.get("brew_duration", extraction_current)
+
     return {
         "process_id": row.get("process_id"),
         "process_type": row.get("process_type", row.get("segment_label", "Live")),
@@ -28,13 +37,13 @@ def dashboard_payload(row, evaluation):
         "segment_label": row.get("segment_label", "Unknown"),
         "elapsed_seconds": row.get("elapsed_seconds", 0),
         "temperature": {
-            "current": round(row.get("temperature", 0), 2)
+            "current": round(temperature_current, 2)
         },
         "pressure": {
-            "current": round(row.get("pressure", 0), 2)
+            "current": round(pressure_current, 2)
         },
         "extractionTime": {
-            "current": round(row.get("brew_elapsed_seconds", 0), 2),
+            "current": round(extraction_current, 2),
             "unit": "s",
             "source": "brewing segment only"
         },
@@ -42,6 +51,10 @@ def dashboard_payload(row, evaluation):
             "current": round(row.get("flowRate", 0), 2),
             "unit": "ml/s",
             "display_only": True
+        },
+        "reading": {
+            "temperature": round(row.get("temperature", 0), 2),
+            "pressure": round(row.get("pressure", 0), 2)
         },
         "prediction": {
             "quality_score": evaluation.get("quality_score", 0),
@@ -109,14 +122,16 @@ def api_process_stream(process_id):
         return jsonify({"error": "Process not found"}), 404
 
     process_type = summary.get("process_type", "Unknown") if summary else "Unknown"
+    process_evaluation = evaluate_process(process_id)
+    use_process_evaluation = process_type == "Brewing process"
 
     def generate():
         global latest_live_data, live_history
 
         for row in rows:
             row["process_type"] = process_type
-            evaluation = evaluate_current_reading(row)
-            payload = dashboard_payload(row, evaluation)
+            evaluation = process_evaluation if use_process_evaluation else evaluate_current_reading(row)
+            payload = dashboard_payload(row, evaluation, use_evaluation_metrics=use_process_evaluation)
 
             latest_live_data = payload
             live_history.append(payload)
@@ -160,6 +175,10 @@ def api_live_reading():
     evaluation = evaluate_current_reading(row)
 
     latest_live_data = dashboard_payload(row, evaluation)
+    app.logger.info(
+        "Stored live reading process_id=%s segment_id=%s temp=%.2f pressure=%.2f elapsed=%.2f",
+        row["process_id"], row["segment_id"], row["temperature"], row["pressure"], row["elapsed_seconds"]
+    )
     live_history.append(latest_live_data)
     live_history = live_history[-100:]
 
@@ -194,10 +213,16 @@ def api_live_stream():
             if latest_live_data is not None and latest_live_data != last_payload:
                 last_payload = latest_live_data
                 yield f"data: {json.dumps(latest_live_data)}\n\n"
+            else:
+                yield ": waiting for live data\n\n"
 
             time.sleep(1)
 
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/influx/live")

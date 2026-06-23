@@ -248,12 +248,12 @@ function addPoint(data) {
 
     chart.data.datasets[0].data.push({
         x: x,
-        y: Number(data.pressure?.current ?? 0)
+        y: Number(data.reading?.pressure ?? data.pressure?.current ?? 0)
     });
 
     chart.data.datasets[1].data.push({
         x: x,
-        y: Number(data.temperature?.current ?? 0)
+        y: Number(data.reading?.temperature ?? data.temperature?.current ?? 0)
     });
 
     chart.update("none");
