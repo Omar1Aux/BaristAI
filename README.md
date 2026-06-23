@@ -96,6 +96,28 @@ BACKEND_READING_URL=http://127.0.0.1:5000/api/live/reading
 BARISTAI_DATA_FILE=data/rancilio-portafilter-dataset.parquet
 ```
 
+
+## Optional InfluxDB flow
+
+InfluxDB is optional. The basic dashboard, Simulate Live mode, and MQTT Real Live mode do **not** require InfluxDB. If you want the older local InfluxDB runtime path, keep the `influxdb_data/` folder and run:
+
+```bat
+start_influx.bat
+```
+
+`influx_writer.py` writes points through the InfluxDB 3 CLI. By default it looks for `influxdb3-core-3.9.3-windows_amd64\influxdb3.exe` inside the project folder and writes to the `baristai` database. You can override these values with:
+
+```env
+INFLUX_PATH=C:\path\to\influxdb3.exe
+INFLUX_DATABASE=baristai
+```
+
+The presentation MQTT path remains separate from InfluxDB:
+
+```text
+csv_streamer.py -> MQTT topic -> mqtt_listener.py -> /api/live/reading -> /api/live/stream -> Real Live dashboard
+```
+
 ## Feedback rules
 
 Rule-based scoring uses only brewing-segment metrics:
