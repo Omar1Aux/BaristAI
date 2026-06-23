@@ -8,7 +8,6 @@ from core.data_engine import (
     get_process_ids,
     get_process_summary,
     get_timeseries,
-    evaluate_process,
     evaluate_live_reading as evaluate_current_reading,
 )
 
