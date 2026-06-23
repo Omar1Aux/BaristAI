@@ -3,14 +3,6 @@ let currentProcessId = null;
 let currentStream = null;
 let currentSegments = [];
 
-const segmentNames = {
-    1: "Brewing",
-    2: "Flushing",
-    3: "Steam",
-    4: "Heating",
-    5: "Idle"
-};
-
 const segmentColors = {
     1: "#8fd19e",
     2: "#9ecff0",
@@ -191,32 +183,39 @@ function updateStatus(score, label) {
     if (score >= 75) {
         setText("statusIcon", "✓");
         setText("statusText", "Extraction looks stable.");
-        statusLabel.style.color = "#1f5d22";
-        statusIcon.style.color = "#1f5d22";
-        statusIcon.style.borderColor = "#1f5d22";
-        confidenceFill.style.background = "#1f5d22";
+        if (statusLabel) statusLabel.style.color = "#1f5d22";
+        if (statusIcon) {
+            statusIcon.style.color = "#1f5d22";
+            statusIcon.style.borderColor = "#1f5d22";
+        }
+        if (confidenceFill) confidenceFill.style.background = "#1f5d22";
     } else if (score >= 45) {
         setText("statusIcon", "!");
         setText("statusText", "Extraction needs some adjustment.");
-        statusLabel.style.color = "#9a4a12";
-        statusIcon.style.color = "#9a4a12";
-        statusIcon.style.borderColor = "#9a4a12";
-        confidenceFill.style.background = "#9a4a12";
+        if (statusLabel) statusLabel.style.color = "#9a4a12";
+        if (statusIcon) {
+            statusIcon.style.color = "#9a4a12";
+            statusIcon.style.borderColor = "#9a4a12";
+        }
+        if (confidenceFill) confidenceFill.style.background = "#9a4a12";
     } else {
         setText("statusIcon", "!");
         setText("statusText", "Extraction is outside the target range.");
-        statusLabel.style.color = "#8b1e12";
-        statusIcon.style.color = "#8b1e12";
-        statusIcon.style.borderColor = "#8b1e12";
-        confidenceFill.style.background = "#8b1e12";
+        if (statusLabel) statusLabel.style.color = "#8b1e12";
+        if (statusIcon) {
+            statusIcon.style.color = "#8b1e12";
+            statusIcon.style.borderColor = "#8b1e12";
+        }
+        if (confidenceFill) confidenceFill.style.background = "#8b1e12";
     }
 }
 
 function updateDashboard(data) {
-    const temp = Number(data.temperature?.current || 0);
-    const pressure = Number(data.pressure?.current || 0);
-    const time = Number(data.extractionTime?.current || data.elapsed_seconds || 0);
-    const score = Number(data.prediction?.quality_score || 0);
+    const temp = Number(data.temperature?.current ?? 0);
+    const pressure = Number(data.pressure?.current ?? 0);
+    const time = Number(data.extractionTime?.current ?? data.elapsed_seconds ?? 0);
+    const score = Number(data.prediction?.quality_score ?? 0);
+    const flowRate = Number(data.flowRate?.current ?? 0);
     const label = data.prediction?.quality_label || "Unknown";
     const feedback = data.prediction?.feedback || ["Waiting for feedback."];
 
@@ -224,6 +223,7 @@ function updateDashboard(data) {
     setText("pressure", pressure.toFixed(2));
     setText("time", time.toFixed(1));
     setText("confidence", Math.round(score) + "%");
+    setText("flowRate", flowRate.toFixed(2));
 
     setWidth("tempBar", temp);
     setWidth("pressureBar", (pressure / 12) * 100);
@@ -242,16 +242,16 @@ function updateDashboard(data) {
 }
 
 function addPoint(data) {
-    const x = Number(data.elapsed_seconds || 0);
+    const x = Number(data.elapsed_seconds ?? 0);
 
     chart.data.datasets[0].data.push({
         x: x,
-        y: Number(data.pressure?.current || 0)
+        y: Number(data.reading?.pressure ?? data.pressure?.current ?? 0)
     });
 
     chart.data.datasets[1].data.push({
         x: x,
-        y: Number(data.temperature?.current || 0)
+        y: Number(data.reading?.temperature ?? data.temperature?.current ?? 0)
     });
 
     chart.update("none");
@@ -346,6 +346,7 @@ async function resetLive() {
     setText("pressure", "-");
     setText("time", "-");
     setText("confidence", "-");
+    setText("flowRate", "-");
     setText("tip", "Waiting for live data...");
     setText("statusLabel", "Waiting...");
     setText("statusText", "Waiting for incoming data.");

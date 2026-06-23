@@ -21,9 +21,9 @@ live_history = []
 
 
 def evaluate_live_reading(row):
-    temp = row["temperature"]
-    pressure = row["pressure"]
-    extraction = row["elapsed_seconds"]
+    temp = float(row.get("temperature", 0))
+    pressure = float(row.get("pressure", 0))
+    extraction = float(row.get("brew_elapsed_seconds", row.get("elapsed_seconds", 0)))
 
     score = 100
     feedback = []
@@ -72,6 +72,7 @@ def dashboard_payload(row, evaluation):
         "segment_id": row.get("segment_id"),
         "segment_label": row.get("segment_label", "Unknown"),
         "elapsed_seconds": row.get("elapsed_seconds", 0),
+
         "temperature": {
             "current": round(row.get("temperature", 0), 2)
         },
@@ -79,8 +80,17 @@ def dashboard_payload(row, evaluation):
             "current": round(row.get("pressure", 0), 2)
         },
         "extractionTime": {
-            "current": round(row.get("elapsed_seconds", 0), 2),
+            "current": round(row.get("brew_elapsed_seconds", row.get("elapsed_seconds", 0)), 2),
             "unit": "s"
+        },
+        "flowRate": {
+            "current": round(row.get("flowRate", 0), 2),
+            "unit": "ml/s",
+            "display_only": True
+        },
+        "reading": {
+            "temperature": round(row.get("temperature", 0), 2),
+            "pressure": round(row.get("pressure", 0), 2)
         },
         "prediction": {
             "quality_score": evaluation.get("quality_score", 0),
@@ -144,18 +154,27 @@ def api_process_timeseries(process_id):
 def api_process_stream(process_id):
     rows = get_timeseries(process_id)
     summary = get_process_summary(process_id)
-    evaluation = evaluate_process(process_id)
 
     if not rows:
         return jsonify({"error": "Process not found"}), 404
 
     process_type = summary.get("process_type", "Unknown") if summary else "Unknown"
+    brew_duration = float(summary.get("brew_duration", 0)) if summary else 0
+    final_evaluation = evaluate_process(process_id)
 
     def generate():
         global latest_live_data, live_history
 
         for row in rows:
             row["process_type"] = process_type
+
+            current_brew_time = float(row.get("brew_elapsed_seconds", row.get("elapsed_seconds", 0)))
+
+            if process_type == "Brewing process" and brew_duration > 0 and current_brew_time >= brew_duration:
+                evaluation = final_evaluation
+            else:
+                evaluation = evaluate_live_reading(row)
+
             payload = dashboard_payload(row, evaluation)
 
             latest_live_data = payload
@@ -165,7 +184,11 @@ def api_process_stream(process_id):
             yield f"data: {json.dumps(payload)}\n\n"
             time.sleep(1)
 
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/api/live/reading", methods=["POST"])
@@ -196,11 +219,19 @@ def api_live_reading():
         "totalVolume": float(data.get("totalVolume", 0)),
     }
 
+    row["brew_elapsed_seconds"] = row["elapsed_seconds"] if segment_id == 1 else 0
+
     evaluation = evaluate_live_reading(row)
 
     latest_live_data = dashboard_payload(row, evaluation)
     live_history.append(latest_live_data)
     live_history = live_history[-100:]
+
+    print(
+        f"Live reading stored | process={row['process_id']} "
+        f"segment={row['segment_id']} temp={row['temperature']} "
+        f"pressure={row['pressure']} time={row['elapsed_seconds']}"
+    )
 
     return jsonify({"status": "ok", "latest": latest_live_data})
 
@@ -233,10 +264,16 @@ def api_live_stream():
             if latest_live_data is not None and latest_live_data != last_payload:
                 last_payload = latest_live_data
                 yield f"data: {json.dumps(latest_live_data)}\n\n"
+            else:
+                yield ": waiting for live data\n\n"
 
             time.sleep(1)
 
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/influx/live")
@@ -255,13 +292,15 @@ def legacy_history():
 @app.route("/live/predict/<int:process_id>")
 def legacy_live_predict(process_id):
     rows = get_timeseries(process_id)
-    evaluation = evaluate_process(process_id)
 
     if not rows:
         return jsonify({"error": "Process not found"}), 404
 
     row = rows[0]
-    return jsonify(dashboard_payload(row, evaluation))
+    summary = get_process_summary(process_id)
+    row["process_type"] = summary.get("process_type", "Unknown") if summary else "Unknown"
+
+    return jsonify(dashboard_payload(row, evaluate_live_reading(row)))
 
 
 if __name__ == "__main__":

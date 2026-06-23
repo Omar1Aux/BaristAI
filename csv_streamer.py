@@ -27,7 +27,7 @@ def load_data():
 
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
     df["process_id"] = pd.to_numeric(df["process_id"], errors="coerce").astype("Int64")
-    df["segment_id"] = pd.to_numeric(df["segment_id"], errors="coerce").astype("Int64")
+    df["segment_id"] = pd.to_numeric(df.get("segment_id", 0), errors="coerce").astype("Int64")
 
     df = df.dropna(subset=["process_id", "timestamp"])
     df["process_id"] = df["process_id"].astype(int)
@@ -44,6 +44,7 @@ def main():
 
     if process_df.empty:
         print(f"No data found for process_id {PROCESS_ID}")
+        print("Available process IDs:", sorted(df["process_id"].unique().tolist())[:50])
         return
 
     start_time = process_df["timestamp"].iloc[0]
@@ -53,12 +54,15 @@ def main():
 
     client = mqtt.Client()
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    client.loop_start()
 
     print("CSV streamer started")
     print("Data:", DATA_FILE)
     print("Process:", PROCESS_ID)
+    print("Broker:", MQTT_BROKER)
     print("Topic:", MQTT_TOPIC)
     print("Rows:", len(process_df))
+    print("Delay:", DELAY_SECONDS, "seconds")
     print("Press CTRL + C to stop")
 
     try:
@@ -73,7 +77,8 @@ def main():
                 "time": round(float(row["elapsed_seconds"]), 2),
             }
 
-            client.publish(MQTT_TOPIC, json.dumps(payload))
+            result = client.publish(MQTT_TOPIC, json.dumps(payload))
+            result.wait_for_publish(timeout=3)
             print("Published:", payload)
 
             time.sleep(DELAY_SECONDS)
@@ -82,6 +87,7 @@ def main():
         print("\nStreamer stopped.")
 
     finally:
+        client.loop_stop()
         client.disconnect()
 
 

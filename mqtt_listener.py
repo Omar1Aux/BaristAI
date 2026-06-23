@@ -27,18 +27,23 @@ def safe_float(value, default=0):
         return default
 
 
+def safe_int(value, default=0):
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
 def normalize_payload(data):
+    # Sensor values only. Flask computes feedback.
     return {
-        "process_id": int(data.get("process_id", 0)),
-        "segment_id": int(data.get("segment_id", 1)),
+        "process_id": safe_int(data.get("process_id", 0)),
+        "segment_id": safe_int(data.get("segment_id", 1)),
         "temp": safe_float(data.get("temp", data.get("temperature", 0))),
         "pressure": safe_float(data.get("pressure", 0)),
         "flowRate": safe_float(data.get("flowRate", 0)),
         "totalVolume": safe_float(data.get("totalVolume", 0)),
         "time": safe_float(data.get("time", data.get("elapsed_seconds", 0))),
-        "quality_score": safe_float(data.get("quality_score", 0)),
-        "quality_label": data.get("quality_label", "Live reading"),
-        "feedback": data.get("feedback", ["Live data received."])
     }
 
 
@@ -62,7 +67,7 @@ def on_message(client, userdata, msg):
             timeout=3
         )
 
-        print("Backend response:", response.status_code)
+        print("Backend response:", response.status_code, response.text[:120])
 
     except Exception as e:
         print("MQTT listener error:", e)
@@ -82,5 +87,6 @@ print("MQTT listener started")
 print("Broker:", MQTT_BROKER)
 print("Port:", MQTT_PORT)
 print("Topic:", MQTT_TOPIC)
+print("Backend:", BACKEND_READING_URL)
 
 client.loop_forever()

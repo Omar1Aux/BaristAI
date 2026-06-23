@@ -1,12 +1,18 @@
 from pathlib import Path
+import os
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATA_FILE = BASE_DIR / "data" / "rancilio-portafilter-dataset.parquet"
+DATA_FILE = Path(os.getenv(
+    "BARISTAI_DATA_FILE",
+    BASE_DIR / "data" / "rancilio-portafilter-dataset.parquet"
+))
 
 if not DATA_FILE.exists():
-    DATA_FILE = BASE_DIR / "data" / "segmented_rancilio_data.parquet"
+    fallback = BASE_DIR / "data" / "segmented_rancilio_data.parquet"
+    if fallback.exists():
+        DATA_FILE = fallback
 
 SEGMENT_LABELS = {
     1: "Brewing",
@@ -24,8 +30,17 @@ SEGMENT_COLORS = {
     5: "#cfcfcf",
 }
 
+TARGETS = {
+    "temp_min": 90,
+    "temp_max": 96,
+    "pressure_min": 8.5,
+    "pressure_max": 10.5,
+    "brew_min": 25,
+    "brew_max": 30,
+}
 
-def safe_float(value, default=0):
+
+def _safe_float(value, default=0.0):
     try:
         if pd.isna(value):
             return default
@@ -34,19 +49,33 @@ def safe_float(value, default=0):
         return default
 
 
+def segment_label(segment_id):
+    try:
+        return SEGMENT_LABELS.get(int(segment_id), "Other")
+    except Exception:
+        return "Other"
+
+
 def load_dataset():
+    if not DATA_FILE.exists():
+        raise FileNotFoundError(
+            f"Dataset not found: {DATA_FILE}. "
+            "Set BARISTAI_DATA_FILE to a valid parquet file."
+        )
+
     df = pd.read_parquet(DATA_FILE).copy()
+
+    df.columns = [str(c).strip() for c in df.columns]
 
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
     df["process_id"] = pd.to_numeric(df["process_id"], errors="coerce").astype("Int64")
-    df["segment_id"] = pd.to_numeric(df["segment_id"], errors="coerce").astype("Int64")
+    df["segment_id"] = pd.to_numeric(df.get("segment_id", 0), errors="coerce").astype("Int64")
 
     df = df.dropna(subset=["process_id", "timestamp"])
     df["process_id"] = df["process_id"].astype(int)
     df["segment_id"] = df["segment_id"].fillna(0).astype(int)
 
-    df = df.sort_values(["process_id", "timestamp"], kind="stable").reset_index(drop=True)
-    return df
+    return df.sort_values(["process_id", "timestamp"], kind="stable").reset_index(drop=True)
 
 
 DF = load_dataset()
@@ -63,31 +92,32 @@ def get_process(process_id):
     if process_df.empty:
         return process_df
 
-    process_df["elapsed_seconds"] = (
-        process_df["timestamp"] - process_df["timestamp"].iloc[0]
-    ).dt.total_seconds()
+    start_time = process_df["timestamp"].iloc[0]
+    process_df["elapsed_seconds"] = (process_df["timestamp"] - start_time).dt.total_seconds()
 
+    # Brewing elapsed seconds:
+    # - 0 before brewing
+    # - counts from brew start during brewing
+    # - keeps last brew value after brewing ends
     process_df["brew_elapsed_seconds"] = 0.0
-
     brew_mask = process_df["segment_id"] == 1
 
     if brew_mask.any():
-        brew_start_time = process_df.loc[brew_mask, "timestamp"].iloc[0]
+        brew_start = process_df.loc[brew_mask, "timestamp"].iloc[0]
+        brew_elapsed = (process_df.loc[brew_mask, "timestamp"] - brew_start).dt.total_seconds()
+        process_df.loc[brew_mask, "brew_elapsed_seconds"] = brew_elapsed
 
-        process_df.loc[brew_mask, "brew_elapsed_seconds"] = (
-            process_df.loc[brew_mask, "timestamp"] - brew_start_time
-        ).dt.total_seconds()
-
+        # Carry last brew elapsed forward after brewing ends.
         process_df["brew_elapsed_seconds"] = (
             process_df["brew_elapsed_seconds"]
-            .replace(0, pd.NA)
+            .where(process_df["brew_elapsed_seconds"] > 0)
             .ffill()
             .fillna(0)
             .astype(float)
         )
 
         first_brew_index = process_df.index[brew_mask][0]
-        process_df.loc[: first_brew_index - 1, "brew_elapsed_seconds"] = 0.0
+        process_df.loc[:first_brew_index - 1, "brew_elapsed_seconds"] = 0.0
 
     return process_df
 
@@ -98,16 +128,17 @@ def get_process_type(process_id):
     if process_df.empty:
         return "Unknown"
 
+    # Important: if a process contains brewing at all, it is a Brewing process.
+    # Do not classify it by dominant segment, because heating/idle can be longer.
     if (process_df["segment_id"] == 1).any():
         return "Brewing process"
 
     counts = process_df["segment_id"].value_counts()
-
     if counts.empty:
         return "Other"
 
     dominant_segment = int(counts.idxmax())
-    return SEGMENT_LABELS.get(dominant_segment, "Other")
+    return f"{segment_label(dominant_segment)} process"
 
 
 def get_brew_window(process_id):
@@ -127,7 +158,7 @@ def get_process_duration(process_id):
 
     return round(
         (process_df["timestamp"].iloc[-1] - process_df["timestamp"].iloc[0]).total_seconds(),
-        2,
+        2
     )
 
 
@@ -139,7 +170,7 @@ def get_brew_duration(process_id):
 
     return round(
         (brew_df["timestamp"].iloc[-1] - brew_df["timestamp"].iloc[0]).total_seconds(),
-        2,
+        2
     )
 
 
@@ -149,16 +180,18 @@ def get_segments(process_id):
     if process_df.empty:
         return []
 
-    segments = []
-    temp_df = process_df.copy()
-    temp_df["_run"] = temp_df["segment_id"].ne(temp_df["segment_id"].shift()).fillna(True).cumsum()
+    segment_series = process_df["segment_id"].ffill().bfill()
+    run_numbers = segment_series.ne(segment_series.shift()).fillna(True).cumsum()
 
+    temp_df = process_df.copy()
+    temp_df["_run"] = run_numbers
+
+    segments = []
     for _, segment_df in temp_df.groupby("_run", sort=True):
         segment_id = int(segment_df["segment_id"].iloc[0])
-
         segments.append({
             "segment_id": segment_id,
-            "label": SEGMENT_LABELS.get(segment_id, "Other"),
+            "label": segment_label(segment_id),
             "color": SEGMENT_COLORS.get(segment_id, "#999999"),
             "start": float(segment_df["elapsed_seconds"].iloc[0]),
             "end": float(segment_df["elapsed_seconds"].iloc[-1]),
@@ -167,46 +200,28 @@ def get_segments(process_id):
     return segments
 
 
-def evaluate_process(process_id):
-    brew_df = get_brew_window(process_id)
-
-    if brew_df.empty:
-        return {
-            "quality_score": 0,
-            "quality_label": "Invalid / Other",
-            "feedback": ["No brewing segment found."],
-            "brew_duration": 0,
-        }
-
-    temp_avg = safe_float(brew_df["temp"].mean())
-    pressure_avg = safe_float(brew_df["pressure"].mean())
-    brew_duration = get_brew_duration(process_id)
-
-    return evaluate_metrics(temp_avg, pressure_avg, brew_duration)
-
-
-def evaluate_metrics(temp, pressure, extraction_time):
+def score_brew_metrics(temp_value, pressure_value, brew_duration):
     score = 100
     feedback = []
 
-    if temp < 90:
+    if temp_value < TARGETS["temp_min"]:
         score -= 25
         feedback.append("Temperature is low. Allow more warm-up time or check temperature stability.")
-    elif temp > 96:
+    elif temp_value > TARGETS["temp_max"]:
         score -= 25
         feedback.append("Temperature is high. Consider a cooling flush or reduce overheating.")
 
-    if pressure < 8.5:
+    if pressure_value < TARGETS["pressure_min"]:
         score -= 30
         feedback.append("Pressure is low. Grind finer or increase puck resistance.")
-    elif pressure > 10.5:
+    elif pressure_value > TARGETS["pressure_max"]:
         score -= 30
         feedback.append("Pressure is high. Grind coarser or reduce puck resistance.")
 
-    if extraction_time < 25:
+    if brew_duration < TARGETS["brew_min"]:
         score -= 20
         feedback.append("Extraction is too short. Grind finer or increase dose.")
-    elif extraction_time > 30:
+    elif brew_duration > TARGETS["brew_max"]:
         score -= 20
         feedback.append("Extraction is too long. Grind coarser or reduce dose.")
 
@@ -226,10 +241,51 @@ def evaluate_metrics(temp, pressure, extraction_time):
         "quality_score": round(score, 2),
         "quality_label": label,
         "feedback": feedback,
-        "temperature_avg": round(temp, 2),
-        "pressure_avg": round(pressure, 2),
-        "brew_duration": round(extraction_time, 2),
+        "temperature_avg": round(temp_value, 2),
+        "pressure_avg": round(pressure_value, 2),
+        "brew_duration": round(brew_duration, 2),
+        "note": "Rule-derived extraction quality, not human taste prediction.",
     }
+
+
+def evaluate_process(process_id):
+    brew_df = get_brew_window(process_id)
+
+    if brew_df.empty:
+        return {
+            "quality_score": 0,
+            "quality_label": "Invalid / Other",
+            "feedback": ["No brewing segment found."],
+            "brew_duration": 0,
+            "note": "Rule-derived extraction quality, not human taste prediction.",
+        }
+
+    temp_avg = _safe_float(brew_df["temp"].mean()) if "temp" in brew_df.columns else 0
+    pressure_avg = _safe_float(brew_df["pressure"].mean()) if "pressure" in brew_df.columns else 0
+    brew_duration = get_brew_duration(process_id)
+
+    return score_brew_metrics(temp_avg, pressure_avg, brew_duration)
+
+
+def evaluate_live_reading(row):
+    segment_id = int(row.get("segment_id", 1))
+
+    # For Real Live, without full process context, score only brewing readings.
+    if segment_id != 1:
+        label = segment_label(segment_id)
+        return {
+            "quality_score": 0,
+            "quality_label": f"{label} / Not a coffee shot",
+            "feedback": [f"{label} segment detected. Extraction quality is only scored during brewing."],
+            "brew_duration": 0,
+            "note": "Rule-derived extraction quality, not human taste prediction.",
+        }
+
+    temp = _safe_float(row.get("temperature"))
+    pressure = _safe_float(row.get("pressure"))
+    brew_elapsed = _safe_float(row.get("brew_elapsed_seconds", row.get("elapsed_seconds", 0)))
+
+    return score_brew_metrics(temp, pressure, brew_elapsed)
 
 
 def get_process_summary(process_id):
@@ -259,14 +315,14 @@ def get_timeseries(process_id):
     for _, row in process_df.iterrows():
         rows.append({
             "process_id": int(row["process_id"]),
-            "elapsed_seconds": safe_float(row["elapsed_seconds"]),
-            "brew_elapsed_seconds": safe_float(row["brew_elapsed_seconds"]),
+            "elapsed_seconds": _safe_float(row.get("elapsed_seconds")),
+            "brew_elapsed_seconds": _safe_float(row.get("brew_elapsed_seconds", 0)),
             "segment_id": int(row["segment_id"]),
-            "segment_label": SEGMENT_LABELS.get(int(row["segment_id"]), "Other"),
-            "temperature": safe_float(row.get("temp")),
-            "pressure": safe_float(row.get("pressure")),
-            "flowRate": safe_float(row.get("flowRate")),
-            "totalVolume": safe_float(row.get("totalVolume")),
+            "segment_label": segment_label(int(row["segment_id"])),
+            "temperature": _safe_float(row.get("temp")),
+            "pressure": _safe_float(row.get("pressure")),
+            "flowRate": _safe_float(row.get("flowRate")),
+            "totalVolume": _safe_float(row.get("totalVolume")),
         })
 
     return rows
