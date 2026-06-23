@@ -215,9 +215,9 @@ function updateStatus(score, label) {
 function updateDashboard(data) {
     const temp = Number(data.temperature?.current || 0);
     const pressure = Number(data.pressure?.current || 0);
-    const time = Number(data.extractionTime?.current || data.elapsed_seconds || 0);
+    const time = Number(data.extractionTime?.current ?? data.elapsed_seconds ?? 0);
     const score = Number(data.prediction?.quality_score || 0);
-    const flowRate = Number(data.flowRate?.current || 0);
+    const flowRate = Number(data.flowRate?.current ?? 0);
     const label = data.prediction?.quality_label || "Unknown";
     const feedback = data.prediction?.feedback || ["Waiting for feedback."];
 
@@ -248,12 +248,12 @@ function addPoint(data) {
 
     chart.data.datasets[0].data.push({
         x: x,
-        y: Number(data.pressure?.current || 0)
+        y: Number(data.pressure?.current ?? 0)
     });
 
     chart.data.datasets[1].data.push({
         x: x,
-        y: Number(data.temperature?.current || 0)
+        y: Number(data.temperature?.current ?? 0)
     });
 
     chart.update("none");
